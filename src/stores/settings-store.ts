@@ -122,13 +122,19 @@ function loadApiKeyLocally(): string {
 }
 
 export function getAIHeaders(): Record<string, string> {
-  const { aiProvider, aiApiKey, aiBaseURL, aiModel } = useSettingsStore.getState();
-  const headers: Record<string, string> = {};
-  if (aiProvider) headers['x-provider'] = aiProvider;
-  if (aiApiKey) headers['x-api-key'] = aiApiKey;
-  if (aiBaseURL) headers['x-base-url'] = aiBaseURL;
-  if (aiModel) headers['x-model'] = aiModel;
-  return headers;
+  try {
+    const state = useSettingsStore.getState?.();
+    if (!state) return {};
+    const { aiProvider, aiApiKey, aiBaseURL, aiModel } = state;
+    const headers: Record<string, string> = {};
+    if (aiProvider) headers['x-provider'] = aiProvider;
+    if (aiApiKey) headers['x-api-key'] = aiApiKey;
+    if (aiBaseURL) headers['x-base-url'] = aiBaseURL;
+    if (aiModel) headers['x-model'] = aiModel;
+    return headers;
+  } catch {
+    return {};
+  }
 }
 
 export const useSettingsStore = create<SettingsStore>((set, get) => ({

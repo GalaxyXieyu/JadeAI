@@ -351,10 +351,41 @@ async function preventNearlyBlankPage(page: Page): Promise<void> {
     }
   }
 
-  // Couldn't fit — remove auto-shrink CSS so normal pagination works cleanly
+  // If content still spans multiple pages, relax pagination rules one more time.
+  // This prevents large wrapper divs from being bumped wholesale to the next page,
+  // which is the main source of oversized blank areas near page bottoms.
   await page.evaluate(() => {
-    const el = document.getElementById('__prevent-blank');
-    if (el) el.remove();
+    let styleEl = document.getElementById('__relax-pagination');
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = '__relax-pagination';
+      document.head.appendChild(styleEl);
+    }
+    styleEl.textContent = `
+      .resume-export [data-section],
+      .resume-export [data-section] *,
+      .resume-export [data-section] > div,
+      .resume-export [data-section] [class*="space-y"],
+      .resume-export [data-section] [class*="space-y"] > div,
+      .resume-export .rounded-lg,
+      .resume-export .border-l-2,
+      .resume-export .border-l-3,
+      .resume-export .border-l-4,
+      .resume-export ul,
+      .resume-export ol {
+        break-inside: auto !important;
+        overflow: visible !important;
+      }
+      .resume-export li,
+      .resume-export h2,
+      .resume-export h3 {
+        break-inside: avoid !important;
+      }
+      .resume-export h2,
+      .resume-export h3 {
+        break-after: avoid !important;
+      }
+    `;
   });
 }
 

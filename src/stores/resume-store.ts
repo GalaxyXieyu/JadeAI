@@ -203,7 +203,14 @@ export const useResumeStore = create<ResumeStore>((set, get) => ({
     const { _saveTimeout } = get();
     if (_saveTimeout) clearTimeout(_saveTimeout);
 
-    const { autoSave, autoSaveInterval, _hydrated } = useSettingsStore.getState();
+    // Defensive: settings store may not be fully initialized during hydration
+    const settingsState = useSettingsStore.getState?.();
+    if (!settingsState) {
+      set({ _saveTimeout: null });
+      return;
+    }
+
+    const { autoSave, autoSaveInterval, _hydrated } = settingsState;
 
     // If settings are hydrated and autoSave is off, only mark dirty, don't auto-save
     if (_hydrated && !autoSave) {

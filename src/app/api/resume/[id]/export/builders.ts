@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 import { esc, buildExportThemeCSS, DEFAULT_THEME, type ResumeWithSections } from './utils';
 import { EXPORT_TAILWIND_CSS } from '@/lib/pdf/export-tailwind-css';
 import { BACKGROUND_TEMPLATES } from '@/lib/constants';
@@ -134,6 +136,42 @@ const TEMPLATE_BUILDERS: Record<string, (r: ResumeWithSections) => string> = {
   mosaic: buildMosaicHtml,
 };
 
+let embeddedPdfFontCssPromise: Promise<string> | null = null;
+
+async function getEmbeddedPdfFontCss(): Promise<string> {
+  if (!embeddedPdfFontCssPromise) {
+    embeddedPdfFontCssPromise = (async () => {
+      const [regular, bold] = await Promise.all([
+        readFile(path.join(process.cwd(), 'public/fonts/NotoSansSC-Regular.otf')),
+        readFile(path.join(process.cwd(), 'public/fonts/NotoSansSC-Bold.otf')),
+      ]);
+
+      return `
+        @font-face {
+          font-family: 'Noto Sans SC PDF';
+          src: url(data:font/otf;base64,${regular.toString('base64')}) format('opentype');
+          font-style: normal;
+          font-weight: 100 500;
+          font-display: swap;
+        }
+        @font-face {
+          font-family: 'Noto Sans SC PDF';
+          src: url(data:font/otf;base64,${bold.toString('base64')}) format('opentype');
+          font-style: normal;
+          font-weight: 600 900;
+          font-display: swap;
+        }
+      `;
+    })().catch((error) => {
+      console.error('Failed to embed local PDF fonts:', error);
+      return '';
+    });
+  }
+
+  return embeddedPdfFontCssPromise;
+}
+
+
 function isValidQrUrl(str: string): boolean {
   if (!str?.trim()) return false;
   try {
@@ -168,6 +206,13 @@ export async function generateHtml(resume: ResumeWithSections, forPdf = false): 
   const bodyHtml = builder(resume);
   const theme = { ...DEFAULT_THEME, ...((resume as any).themeConfig || {}) };
   const themeCSS = buildExportThemeCSS(theme, resume.template);
+  const embeddedPdfFontCss = forPdf ? await getEmbeddedPdfFontCss() : '';
+  const remoteFontLinks = forPdf
+    ? ''
+    : `
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap" rel="stylesheet">`;
   const isBackground = BACKGROUND_TEMPLATES.has(resume.template);
 
   const fullDarkBg = FULL_DARK_TEMPLATES[resume.template];
@@ -197,12 +242,23 @@ export async function generateHtml(resume: ResumeWithSections, forPdf = false): 
        html, body { background: ${bodyBg} !important; padding: 0 !important; margin: 0 !important; display: block !important; min-height: 100%; }
        .resume-export { width: 100%; }
        .resume-export > div { box-shadow: none !important; overflow: visible !important; ${outerNeedsClone ? '-webkit-box-decoration-break: clone; box-decoration-break: clone;' : 'padding-top: 0 !important; padding-bottom: 0 !important;'} ${isSidebarDark ? 'min-height: auto !important; max-width: none !important; width: 100% !important; background: transparent !important;' : isBackground ? 'max-width: none !important; width: 100% !important;' : 'background: white !important;'} }
-       /* Smart pagination: allow sections to break across pages, keep individual items together.
-          overflow:visible is critical — Chrome treats overflow:hidden as monolithic (no page fragmentation). */
+       /* Smart pagination: allow sections and large content blocks to fragment normally.
+          Only keep tiny semantic units together; avoiding large wrapper divs creates big blank areas. */
        [data-section] { break-inside: auto !important; overflow: visible !important; }
        [data-section] * { overflow: visible !important; }
-       [data-section] [class*="space-y"] { break-inside: auto !important; }
-       [data-section] [class*="space-y"] > div, .item { break-inside: avoid !important; }
+       [data-section] > div,
+       [data-section] [class*="space-y"],
+       [data-section] [class*="space-y"] > div,
+       [data-section] ul,
+       [data-section] ol {
+         break-inside: auto !important;
+       }
+       [data-section] li,
+       [data-section] h2,
+       [data-section] h3,
+       .item {
+         break-inside: avoid !important;
+       }
        h2, h3 { break-after: avoid !important; }
        p { orphans: 3; widows: 3; }
        ${isSidebarDark ? `/* Sidebar dark: body gradient = sidebar colour every page.
@@ -243,9 +299,8 @@ export async function generateHtml(resume: ResumeWithSections, forPdf = false): 
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${esc(resume.title)}</title>
   <style>${EXPORT_TAILWIND_CSS}</style>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  ${remoteFontLinks}
+  <style>${embeddedPdfFontCss}</style>
   <style>
     body { margin: 0; display: flex; justify-content: center; padding: 40px 20px; background: #f4f4f5; min-height: 100vh; }
     @media print { body { padding: 0 !important; background: white !important; } .resume-export > div { box-shadow: none !important; } }
